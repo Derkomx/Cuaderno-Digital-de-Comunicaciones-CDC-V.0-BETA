@@ -1,2 +1,4 @@
-# Cuaderno-Digital-de-Comunicaciones-CDC-V.0-BETA
-Cuaderno digital de comunicaciones, creado con la finalidad de ser gratuito y de libre modificación, siempre y cuando no se distribuya de manera monetizada.
+## Licencia
+
+Este proyecto está licenciado bajo una versión modificada de la Licencia MIT, que permite solo uso no comercial.  
+Para más información, consultá el archivo [LICENSE](./LICENSE) o contactá al autor en http://ezsoft.com.ar.
