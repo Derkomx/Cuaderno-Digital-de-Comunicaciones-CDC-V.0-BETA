@@ -1,0 +1,29 @@
+Funcion y consulta para actualizar los nombres y apellidos (estandarizarlos)
+DELIMITER //
+
+CREATE FUNCTION CapitalizarTexto(texto VARCHAR(255)) RETURNS VARCHAR(255) DETERMINISTIC
+BEGIN
+    DECLARE resultado VARCHAR(255);
+    DECLARE palabra VARCHAR(255);
+    DECLARE i INT DEFAULT 1;
+    
+    SET resultado = '';
+    
+    WHILE LENGTH(texto) > 0 DO
+        SET palabra = SUBSTRING_INDEX(texto, ' ', 1);
+        SET palabra = CONCAT(UPPER(LEFT(palabra, 1)), LOWER(SUBSTRING(palabra, 2)));
+        SET resultado = CONCAT(resultado, ' ', palabra);
+        SET texto = SUBSTRING(texto FROM LOCATE(' ', texto) + 1);
+        
+        IF LOCATE(' ', texto) = 0 THEN
+            SET texto = '';
+        END IF;
+    END WHILE;
+    
+    RETURN TRIM(resultado);
+END //
+
+DELIMITER ;
+UPDATE usuarios 
+SET nombre = CapitalizarTexto(nombre), 
+    apellido = CapitalizarTexto(apellido);

@@ -1,0 +1,211 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['dni'])) {
+    die('Acceso no autorizado. Sesión no iniciada.');
+}
+
+include 'includes/Email.php';
+include 'includes/MySQL.php';
+require 'vendor/autoload.php';
+
+use Google\Auth\Credentials\ServiceAccountCredentials;
+use Google\Auth\HttpHandler\HttpHandlerFactory;
+
+$mensaje = '';
+
+// Función para obtener correos y tokens FCM de los tutores asociados a un alumno
+function obtenerCorreosYTokensTutores($dniAlumno, $mysqli) {
+    $tutores = [];
+    $sqlTutores = "SELECT td.mail, tf.token 
+                   FROM tutor t 
+                   LEFT JOIN tutordatos td ON t.dni = td.dni 
+                   LEFT JOIN token_fcm tf ON t.dni = tf.dni 
+                   WHERE t.dni_asoc = ?";
+    $stmtTutores = $mysqli->prepare($sqlTutores);
+    $stmtTutores->bind_param('s', $dniAlumno);
+    $stmtTutores->execute();
+    $resultado = $stmtTutores->get_result();
+
+    while ($fila = $resultado->fetch_assoc()) {
+        if (!array_key_exists($fila['mail'], $tutores)) {
+            $tutores[$fila['mail']] = ['tokens' => []];
+        }
+        if (!empty($fila['token'])) {
+            $tutores[$fila['mail']]['tokens'][] = $fila['token'];
+        }
+    }
+    $stmtTutores->close();
+    return $tutores;
+}
+
+// -------------------------
+// Procesamiento del formulario de asistencia
+// -------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $curso    = intval($_GET['anio'] ?? 0);
+    $division = intval($_GET['division'] ?? 0);
+    $fecha    = date('Y-m-d');
+    $turno    = $_GET['turno'] ?? '';
+
+    if (!in_array($turno, ['clase', 'taller'])) {
+        echo "<script>Notiflix.Report.Failure('Error', 'Turno inválido.', 'Aceptar');</script>";
+        exit;
+    }
+
+    // Verificar si ya existe un registro para el mismo día, curso y turno
+    $sqlCheck = "SELECT COUNT(*) as total FROM asistencia WHERE curso = ? AND division = ? AND fecha = ? AND turno = ?";
+    $stmtCheck = $mysqli->prepare($sqlCheck);
+    $stmtCheck->bind_param('iiss', $curso, $division, $fecha, $turno);
+    $stmtCheck->execute();
+    $resultadoCheck = $stmtCheck->get_result();
+    $filaCheck = $resultadoCheck->fetch_assoc();
+    $stmtCheck->close();
+    
+    if ($filaCheck['total'] > 0) {
+        echo "<script>Notiflix.Report.Failure('Error', 'La asistencia para esta fecha, curso y turno ya ha sido registrada.', 'Aceptar');</script>";
+        exit;
+    }
+
+    // Recuperar alumnos del curso y división
+    $sql = "SELECT dni, apellido, nombre FROM usuarios WHERE curso = ? AND division = ? ORDER BY apellido ASC, nombre ASC";
+    $stmt = $mysqli->prepare($sql);
+    $stmt->bind_param('ii', $curso, $division);
+    $stmt->execute();
+    $resultado = $stmt->get_result();
+    $alumnos = $resultado->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    // Obtener token de acceso FCM
+    $credential = new ServiceAccountCredentials(
+        "https://www.googleapis.com/auth/firebase.messaging",
+        json_decode(file_get_contents("pvkey.json"), true)
+    );
+    $token_data  = $credential->fetchAuthToken(HttpHandlerFactory::build());
+    $accessToken = $token_data['access_token'];
+
+    // Registrar asistencia de cada alumno
+    foreach ($alumnos as $alumno) {
+        $dni      = $alumno['dni'];
+        $apellido = $alumno['apellido'];
+        $nombre   = $alumno['nombre'];
+        $presente = isset($_POST['asistencia'][$dni]) ? 1 : 0;
+
+        // Insertar asistencia en la base de datos
+        $insertSql = "INSERT INTO asistencia (dni, curso, division, fecha, turno, presente) VALUES (?, ?, ?, ?, ?, ?)";
+        $stmtInsert = $mysqli->prepare($insertSql);
+        $stmtInsert->bind_param('siissi', $dni, $curso, $division, $fecha, $turno, $presente);
+        $stmtInsert->execute();
+        $stmtInsert->close();
+
+        // Enviar notificación si el alumno está ausente
+        if ($presente === 0) {
+            $tutores = obtenerCorreosYTokensTutores($dni, $mysqli);
+            $motivo = ($turno == 'taller') ? 'al taller' : 'a clase';
+            $asunto = "Asistencia del estudiante";
+            $cuerpo = "El estudiante $apellido, $nombre no asistió $motivo el día $fecha.";
+
+            foreach ($tutores as $mail => $info) {
+                if (!empty($mail)) {
+                    enviarCorreo([$mail], $asunto, $cuerpo, 'nota', '');
+                }
+                if (!empty($info['tokens'])) {
+                    foreach ($info['tokens'] as $tokenFCM) {
+                        enviarNotificacionFCM($tokenFCM, "Falta de Asistencia", "El estudiante $apellido, $nombre no asistió hoy.", $accessToken);
+                    }
+                }
+            }
+        }
+    }
+    echo "<script>Notiflix.Report.Success('Éxito', 'Asistencia guardada correctamente.', 'Aceptar');</script>";
+}
+
+// -------------------------
+// Carga de la lista de alumnos para el formulario
+// -------------------------
+$curso    = intval($_GET['anio'] ?? 1);
+$division = intval($_GET['division'] ?? 1);
+$turno    = $_GET['turno'] ?? '';
+
+$sql = "SELECT dni, apellido, nombre FROM usuarios WHERE curso = ? AND division = ? ORDER BY apellido ASC, nombre ASC";
+$stmt = $mysqli->prepare($sql);
+$stmt->bind_param('ii', $curso, $division);
+$stmt->execute();
+$resultado = $stmt->get_result();
+$alumnos = $resultado->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
+?>
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro de Asistencia</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f7f7f7;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            text-align: center;
+            padding: 1rem;
+        }
+        section {
+            margin: 20px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            max-width: 800px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border: 1px solid #ddd; }
+        tr:hover { background-color: #f2f2f2; cursor: pointer; }
+        .mensaje {
+            padding: 10px; background: #4CAF50; color: white; margin-top: 10px;
+            text-align: center; display: <?php echo ($mensaje != '') ? 'block' : 'none'; ?>;
+        }
+        button {
+            padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Registro de Asistencia</h1>
+        <p><?php echo "Curso: " . $curso . "º, División: " . $division . ", Turno: " . ucfirst($turno); ?></p>
+    </header>
+    <section>
+        <?php if (!empty($mensaje)): ?>
+            <div class="mensaje"><?php echo htmlspecialchars($mensaje); ?></div>
+        <?php endif; ?>
+        <form method="post">
+            <table>
+                <tr><th>Apellido</th><th>Nombre</th><th>Presente</th></tr>
+                <?php foreach ($alumnos as $alumno): ?>
+                <tr onclick="toggleCheckbox(this)">
+                    <td><?php echo htmlspecialchars($alumno['apellido']); ?></td>
+                    <td><?php echo htmlspecialchars($alumno['nombre']); ?></td>
+                    <td>
+                        <input type="checkbox" name="asistencia[<?php echo $alumno['dni']; ?>]">
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
+            <button type="submit">Aceptar</button>
+        </form>
+    </section>
+    
+    <script>
+        function toggleCheckbox(row) {
+            let checkbox = row.querySelector("input[type='checkbox']");
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+        }
+    </script>
+</body>
+</html>

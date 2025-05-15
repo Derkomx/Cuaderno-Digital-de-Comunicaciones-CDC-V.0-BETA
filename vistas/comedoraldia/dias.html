@@ -1,0 +1,89 @@
+
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seleccionar Día de la Semana</title>
+    <link rel="stylesheet" href="vistas/comedoraldia/styles.css">
+</head>
+
+<div class="body">
+    <br>
+    <div class="container">
+        <h2>Selecciona un Día de la Semana</h2>
+        <form id="formDia" action="index.php" method="get">
+            <div class="form-group">
+                <label for="dia">Día:</label>
+                <select id="dia" name="dia" required>
+                    <option value="" disabled selected>Elegir Día</option>
+                    <option value="Lunes">Lunes</option>
+                    <option value="Martes">Martes</option>
+                    <option value="Miércoles">Miércoles</option>
+                    <option value="Jueves">Jueves</option>
+                    <option value="Viernes">Viernes</option>
+                </select>
+            </div>
+            <input type="hidden" id="fecha" name="fecha" value="">
+            <input type="hidden" id="seccion" name="Seccion" value="comedoraldia2"> <!-- Campo oculto agregado -->
+            <div class="form-group">
+                <button type="submit">Enviar</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const select = document.getElementById('dia');
+            const form = document.getElementById('formDia');
+            const fechaInput = document.getElementById('fecha');
+            const today = new Date();
+            const currentDay = today.getDay(); // Obtiene el día actual (0=Domingo, 1=Lunes, etc.)
+
+            const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+            // Ocultar los días anteriores al actual (si es entre lunes y viernes)
+            daysOfWeek.forEach((day, index) => {
+                if (currentDay > 0 && currentDay < 6 && index + 1 < currentDay) {
+                    const option = select.querySelector(`option[value="${day}"]`);
+                    if (option) {
+                        option.style.display = 'none'; // Ocultar opción
+                    }
+                }
+            });
+
+            // Calcular la fecha correspondiente al día seleccionado
+            select.addEventListener('change', function () {
+                const selectedDay = select.value;
+                const selectedIndex = daysOfWeek.indexOf(selectedDay);
+
+                if (selectedIndex >= 0) {
+                    // Ajustar la fecha actual para obtener la fecha correspondiente al día seleccionado
+                    const selectedDate = new Date(today);
+                    selectedDate.setDate(today.getDate() + (selectedIndex + 1 - currentDay));
+
+                    // Formatear la fecha en formato DD/MM/YYYY
+                    const day = selectedDate.getDate();
+                    const month = selectedDate.getMonth() + 1; // Los meses en JavaScript van de 0 a 11
+                    const year = selectedDate.getFullYear();
+
+                    const formattedDate = `${day}/${month}/${year}`;
+
+                    // Asignar la fecha formateada al campo oculto
+                    fechaInput.value = formattedDate;
+                }
+            });
+
+            // Enviar el día y la fecha por GET
+            form.addEventListener('submit', function (event) {
+                if (!select.value) {
+                    event.preventDefault(); // Evitar el envío si no hay un día seleccionado
+                    alert('Por favor selecciona un día');
+                }
+            });
+        });
+    </script>
+</div>
+
+</html>

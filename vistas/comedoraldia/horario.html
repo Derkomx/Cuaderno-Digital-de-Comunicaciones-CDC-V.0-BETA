@@ -1,0 +1,247 @@
+
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <link rel="stylesheet" href="vistas/comedoraldia/styles.css">
+    <style>
+        .countdown-message {
+            color: red;
+            font-weight: bold;
+            display: none;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .button-container button {
+            margin-left: 10px;
+        }
+
+        .cancel-button {
+            background-color: red;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .cancel-button:hover {
+            background-color: darkred;
+        }
+
+        .acept-button {
+            background-color: rgb(72, 215, 134);
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .acept-button:hover {
+            background-color: rgb(30, 127, 78);
+        }
+    </style>
+</head>
+
+<div class="body">
+    <br>
+    <div class="container">
+        <h2>Horario</h2>
+        <div class="clock" id="clock">--:--</div>
+        <div class="form-group">
+            <label for="hora">Selecciona una hora:</label>
+            <select id="hora" name="hora" required>
+                <option value="" disabled selected>Elegir horario</option>
+                <!-- Opciones de hora se generarán automáticamente -->
+            </select>
+        </div>
+        <div class="form-group">
+            <h2>Horas hasta que se cierre la inscripción</h2>
+            <div id="countdown" class="clock">00:00:00</div>
+            <div id="countdown-message" class="countdown-message">No puedes inscribirte</div>
+        </div>
+        <div class="button-container">
+            <button type="button" class="acept-button" onclick="inscribirse()">Inscribirse</button>
+            <button type="button" class="cancel-button" onclick="cancelarInscripcion()">Cancelar Inscripción</button>
+        </div>
+    </div>
+
+    <script src="librerias/notiflix-2.4.0.min.js"></script>
+    <script src="librerias/jquery-3.6.0.min.js"></script>
+    <script>
+        // Opcional: permitir inscripciones fuera del horario para pruebas
+        let testMode = true; // Cambia a 'false' para desactivar el modo de prueba
+        let countdownInterval;
+        let timerRunning = false;
+
+        // Función para obtener los parámetros GET de la URL
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        // Recuperar día y fecha desde el GET
+        const selectedDay = getQueryParam('dia');
+        const selectedDate = getQueryParam('fecha');
+
+        // Función para generar las opciones de hora en el select
+        function generateTimeOptions() {
+            const select = document.getElementById('hora');
+            const allowedTimes = ['12:00', '12:30'];
+
+            allowedTimes.forEach(time => {
+                const option = document.createElement('option');
+                option.value = time;
+                option.textContent = time;
+                select.appendChild(option);
+            });
+        }
+
+
+        // Función para mostrar el reloj en la hora de Argentina
+        function updateClock() {
+            const now = new Date();
+            const options = { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+            const timeString = now.toLocaleTimeString('es-AR', options);
+            document.getElementById('clock').textContent = timeString;
+        }
+
+        // Función para actualizar la cuenta regresiva
+        function updateCountdown() {
+            const now = new Date();
+            const endTime = new Date();
+            endTime.setHours(9, 30, 0, 0); // Ajusta esto al horario de cierre
+
+            const timeDiff = endTime - now;
+            const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+            const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+            const countdownElement = document.getElementById('countdown');
+            const messageElement = document.getElementById('countdown-message');
+
+            if (timeDiff <= 0) {
+                countdownElement.textContent = '00:00:00';
+                countdownElement.style.display = 'none'; // Oculta el temporizador
+                messageElement.style.display = 'block'; // Muestra el mensaje
+                clearInterval(countdownInterval); // Detiene el temporizador
+            } else {
+                countdownElement.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                messageElement.style.display = 'none'; // Oculta el mensaje
+            }
+        }
+
+        // Función para manejar el botón de inscripción
+        function inscribirse() {
+            console.log(selectedDate);
+            const selectedTime = document.getElementById('hora').value;
+            if (!selectedTime) {
+                Notiflix.Notify.Failure('Por favor, selecciona un horario.');
+                return;
+            }
+
+            // Obtener la hora actual
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+
+            // Definir el rango de horas permitido (7:30 - 9:30)
+            const startLimit = new Date();
+            startLimit.setHours(7, 30, 0, 0);
+            const endLimit = new Date();
+            endLimit.setHours(9, 30, 0, 0);
+
+            if (!testMode && (now < startLimit || now > endLimit)) {
+                Notiflix.Notify.Failure('El horario para anotarse al comedor es de 7:30 hs a 9:30 hs. Comunícate con un preceptor.');
+                return;
+            }
+
+            // Aquí va la parte de la petición AJAX
+            const dni = "12345678"; // Debes obtener el DNI de alguna manera
+            $.ajax({
+                url: 'Inyector.php', // Archivo PHP que manejará la petición
+                method: 'POST',
+                data: {
+                    Archivo: 'comedoraldia_inscribirse.php',
+                    dni: dni,
+                    hora: selectedTime,
+                    dia: selectedDay,      // Agregar día enviado por GET
+                    fecha: selectedDate    // Agregar fecha enviada por GET
+                },
+                dataType: 'json',
+                success: function (response) {
+                    console.log(response); // Depurar la respuesta del servidor
+                    if (response.success) {
+                        Notiflix.Notify.Success('Te has inscrito correctamente!');
+                    } else {
+                        Notiflix.Notify.Failure(response.message); // Mostrar el mensaje de error del servidor
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.log('Error en la conexión con el servidor:', status, error);
+                    Notiflix.Notify.Failure('Error en la conexión con el servidor.');
+                }
+            });
+        }
+
+        // Función para manejar el botón de cancelar inscripción
+        function cancelarInscripcion() {
+            // Obtener la hora actual
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+
+            // Definir el rango de horas permitido para cancelar (7:30 - 9:30)
+            const startLimit = new Date();
+            startLimit.setHours(13, 0, 0, 0);
+            const endLimit = new Date();
+            endLimit.setHours(10, 0, 0, 0);
+
+            if (!testMode && (now < startLimit || now > endLimit)) {
+                Notiflix.Notify.Failure('El horario para cancelar la inscripción es de 7:30 hs a 9:30 hs. Comunícate con un preceptor.');
+                return;
+            }
+
+            // Aquí va la parte de la petición AJAX
+            const dni = "12345678"; // Debes obtener el DNI de alguna manera
+            $.ajax({
+                url: 'Inyector.php', // Archivo PHP que manejará la cancelación
+                method: 'POST',
+                data: {
+                    Archivo: 'comedoraldia_cancelar.php',
+                    dni: dni,
+                    dia: selectedDay,      // Agregar día enviado por GET
+                    fecha: selectedDate    // Agregar fecha enviado por GET
+                },
+                dataType: 'json',
+                success: function (response) {
+                    console.log(response); // Depurar la respuesta del servidor
+                    if (response.success) {
+                        Notiflix.Notify.Success('Tu inscripción ha sido cancelada.');
+                    } else {
+                        Notiflix.Notify.Failure(response.message); // Mostrar el mensaje de error del servidor
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.log('Error en la conexión con el servidor:', status, error); // Mensaje básico
+                    console.log('Detalles del error:');
+                    console.log('XHR status:', xhr.status);          // Código de estado HTTP (ej. 404, 500)
+                    console.log('XHR status text:', xhr.statusText); // Texto del estado (ej. 'Not Found', 'Internal Server Error')
+                    console.log('Response text:', xhr.responseText); // Cuerpo de la respuesta del servidor, útil si es HTML o JSON malformado
+                    Notiflix.Notify.Failure('Error en la conexión con el servidor.');
+                }
+            });
+        }
+
+        // Iniciar el reloj y la cuenta regresiva
+        setInterval(updateClock, 1000);
+        generateTimeOptions();
+        countdownInterval = setInterval(updateCountdown, 1000);
+    </script>
+</div>
+
+</html>
